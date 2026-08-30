@@ -30,7 +30,7 @@ DEFAULT_CORRELATION_ID = "<FAKE_CORRELATION_ID>"
 
 
 def _base_url() -> str:
-    """Obtém e normaliza a base URL já usada pela API de cancelamentos."""
+    """Obtém e normaliza a base URL configurada para a integração HTTP."""
     return os.environ.get(BASE_URL_ENV, "").rstrip("/")
 
 
