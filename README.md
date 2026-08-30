@@ -20,14 +20,14 @@ Enquanto o Secrets Manager ainda não existir, o patch contém um bloco explicit
 
 O fallback usa `cryptography.fernet` para descriptografar ciphertexts separados por `dev`, `hml` e `prod` durante o cold start. Depois de carregar `CLIENT_ID`/`CLIENT_SECRET` em memória, warm invocations reaproveitam os valores.
 
-**Importante:** ciphertext + chave no mesmo fonte não é proteção real. Para o deploy manual de hoje, o modo recomendado é:
+**Importante:** ciphertext + chave no mesmo fonte não é proteção real. Para o deploy manual temporário, o modo recomendado é:
 
 1. manter somente os ciphertexts no código local;
 2. informar `TEMP_CREDENTIALS_KEY` manualmente como environment variable da Lambda;
 3. não commitar a chave nem as credenciais reais;
-4. quando o Secret Manager estiver disponível, remover integralmente o bloco temporário e `requirements-temporary.txt`.
+4. quando o Secrets Manager estiver disponível, remover integralmente o bloco temporário e `requirements-temporary.txt`.
 
-Isso não exige criar um recurso novo de infraestrutura.
+Isso não exige criar um recurso AWS adicional.
 
 ### Gerar chave e ciphertexts localmente
 
@@ -48,16 +48,27 @@ for name in ("CLIENT_ID", "CLIENT_SECRET"):
 PY
 ```
 
-Preencha somente a cópia local do patch aplicada ao repositório corporativo. Não publique os valores neste repositório.
+Gere um par de ciphertexts para cada ambiente e substitua os placeholders somente na cópia local aplicada ao repositório corporativo. Não publique os valores neste repositório.
 
-## Aplicação
+## Patch consolidado
 
-O arquivo `payment-receipt-integration.patch` é o artefato consolidado. Na raiz do repositório original:
+O patch canônico é gerado pelo commit dedicado abaixo, na branch `patch-delivery`:
+
+- commit: `ea111b11c3383af5b6beab74728eb2cae824856d`
+- patch: `https://github.com/sylviohmartins/aws-lambda-payment-receipt-integration/commit/ea111b11c3383af5b6beab74728eb2cae824856d.patch`
+
+Na raiz do repositório original:
 
 ```bash
+curl -L \
+  https://github.com/sylviohmartins/aws-lambda-payment-receipt-integration/commit/ea111b11c3383af5b6beab74728eb2cae824856d.patch \
+  -o payment-receipt-integration.patch
+
 git apply --check payment-receipt-integration.patch
 git apply payment-receipt-integration.patch
 ```
+
+O commit foi construído com um baseline sintético que contém os pontos de contexto reconstruídos do vídeo. Por isso `git apply --check` é obrigatório no repositório corporativo real antes da aplicação.
 
 Depois, substitua os placeholders temporários localmente e empacote `cryptography` para o runtime Lambda antes do deploy manual.
 
