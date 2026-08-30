@@ -1,90 +1,73 @@
 # AWS Lambda Payment Receipt Integration
 
-Implementação mínima para acrescentar à Lambda de **update de retorno de tributos** a consulta de comprovante usando o mesmo padrão de autenticação recuperado da Lambda de cancelamentos.
+Patch de referência para adicionar à Lambda de update de retorno de tributos a autenticação STS e a consulta de comprovante, preservando o fluxo existente.
 
-> Este repositório é um **patch de referência**, não o repositório-fonte completo da Lambda original. O código original foi reconstruído a partir de vídeo, portanto o arquivo `lambda_function.patch` mostra apenas a inserção necessária no handler existente.
-
-## Fluxo
+## Fluxo permanente
 
 ```text
 ARN_SECRET
   -> Secrets Manager
   -> CLIENT_ID / CLIENT_SECRET
-  -> STS (client_credentials + Basic Auth)
-  -> access_token
-  -> GET {BOLETOS_API_BASE_URL}/comprovantes/v3/comprovantes/{numero_autenticacao_comprovante}
-  -> response JSON
+  -> STS client_credentials
+  -> Bearer token
+  -> GET /comprovantes/v3/comprovantes/{numero_autenticacao_comprovante}
   -> fluxo original continua
 ```
 
-A consulta é **GET sem body**.
+## Fallback temporário sem nova infraestrutura
 
-## Estrutura escolhida
+Enquanto o Secrets Manager ainda não existir, o patch contém um bloco explicitamente marcado como **TEMPORÁRIO** em `src/config/credentials.py`. O caminho permanente de `AwsSecretManagerConfig.set_env_from_secret()` continua intacto.
 
-A estrutura foi simplificada para evitar hierarquia de um único arquivo:
+O fallback usa `cryptography.fernet` para descriptografar ciphertexts separados por `dev`, `hml` e `prod` durante o cold start. Depois de carregar `CLIENT_ID`/`CLIENT_SECRET` em memória, warm invocations reaproveitam os valores.
 
-```text
-src/
-├── client/
-│   ├── comprovantes_api.py
-│   ├── http_retry.py
-│   └── sts.py
-└── config/
-    └── credentials.py
-```
+**Importante:** ciphertext + chave no mesmo fonte não é proteção real. Para o deploy manual de hoje, o modo recomendado é:
 
-`config/secretManager/credentials.py` foi reduzido para `config/credentials.py`. O STS e sua exception ficaram juntos em `client/sts.py`, eliminando um pacote `exception/` que existiria apenas para uma classe.
+1. manter somente os ciphertexts no código local;
+2. informar `TEMP_CREDENTIALS_KEY` manualmente como environment variable da Lambda;
+3. não commitar a chave nem as credenciais reais;
+4. quando o Secret Manager estiver disponível, remover integralmente o bloco temporário e `requirements-temporary.txt`.
 
-## Resiliência e logs
+Isso não exige criar um recurso novo de infraestrutura.
 
-- Secrets Manager: timeout + retry `standard` do botocore, máximo de 3 tentativas.
-- STS: até 3 tentativas para timeout/conexão e HTTP `429/500/502/503/504`, com exponential backoff + jitter.
-- GET de comprovante: mesma política de retry transitório.
-- HTTP 4xx não transitório não é repetido.
-- Logs informam início/sucesso/falha e tentativas sem registrar token, client secret ou API keys.
-- Todos os requests possuem timeout de 10 segundos, alinhado ao padrão reconstruído da Lambda de cancelamentos.
+### Gerar chave e ciphertexts localmente
 
-## Headers
-
-A chamada usa:
-
-- `Authorization: Bearer <token>`
-- `x-apigw-api-id`
-- `x-itau-apikey-internal`
-- `x-itau-apikey`
-- `x-itau-flowID`
-- `x-itau-correlationID`
-- `Accept: application/json`
-- `Content-Type: application/json`
-
-Valores não fornecidos permanecem placeholders/configuração por environment variable. O client bloqueia a chamada se os três headers de API ainda estiverem com `<FAKE_...>`, evitando uso acidental em ambiente real.
-
-## Variáveis esperadas
-
-```text
-ARN_SECRET
-TOKEN_URL
-BOLETOS_API_BASE_URL
-X_APIGW_API_ID
-X_ITAU_APIKEY_INTERNAL
-X_ITAU_APIKEY
-X_ITAU_FLOW_ID
-X_ITAU_CORRELATION_ID
-```
-
-`CLIENT_ID` e `CLIENT_SECRET` são carregados do Secrets Manager no bootstrap, seguindo o padrão da Lambda de cancelamentos.
-
-Os valores de `flowID` e `correlationID` também permanecem como placeholders explícitos e devem ser configurados no ambiente antes do uso.
-
-## Ponto de inserção
-
-No vídeo da Lambda de tributos já havia comentário imediatamente antes de `execute_with_retries(Dynamodb().update_item, ...)` mencionando `numero_autenticacao_comprovante`. O patch utiliza exatamente esse ponto.
-
-## Validação local
+Instale a dependência temporária e execute localmente, sem colar o resultado no GitHub público:
 
 ```bash
-python -m compileall -q .
-PYTHONPATH=. pytest -q
+pip install -r requirements-temporary.txt
+python - <<'PY'
+from getpass import getpass
+from cryptography.fernet import Fernet
+
+key = Fernet.generate_key()
+fernet = Fernet(key)
+print("TEMP_CREDENTIALS_KEY=", key.decode())
+for name in ("CLIENT_ID", "CLIENT_SECRET"):
+    value = getpass(f"{name}: ").encode()
+    print(f"{name}_CIPHERTEXT=", fernet.encrypt(value).decode())
+PY
 ```
+
+Preencha somente a cópia local do patch aplicada ao repositório corporativo. Não publique os valores neste repositório.
+
+## Aplicação
+
+O arquivo `payment-receipt-integration.patch` é o artefato consolidado. Na raiz do repositório original:
+
+```bash
+git apply --check payment-receipt-integration.patch
+git apply payment-receipt-integration.patch
+```
+
+Depois, substitua os placeholders temporários localmente e empacote `cryptography` para o runtime Lambda antes do deploy manual.
+
+## Validação
+
+```bash
+python -m compileall -q src tests
+PYTHONPATH=. pytest -q --cov=src.client --cov=src.config --cov-branch --cov-report=term-missing --cov-fail-under=100
+```
+
+Resultado da versão publicada: **30 testes, 100% de statements e 100% de branches nos quatro arquivos novos de produção**.
 
 Nenhum teste realiza chamadas reais à AWS, STS ou API de comprovantes.
