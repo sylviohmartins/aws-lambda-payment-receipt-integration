@@ -1,23 +1,48 @@
-# Aplicação do patch consolidado
+# Aplicação do patch
 
-O patch consolidado é gerado pelo commit dedicado `ea111b11c3383af5b6beab74728eb2cae824856d`, disponível na branch `patch-delivery`. Ele contém somente:
+## Pré-requisito
 
-- alteração de `lambda_function.py`;
-- dependência temporária `cryptography`;
-- quatro arquivos novos de produção;
-- quatro arquivos de testes unitários.
+Coloque na raiz do projeto-alvo, no mesmo nível de `lambda_function.py` e `src/`:
 
-Na raiz da Lambda original:
-
-```bash
-curl -L \
-  https://github.com/sylviohmartins/aws-lambda-payment-receipt-integration/commit/ea111b11c3383af5b6beab74728eb2cae824856d.patch \
-  -o payment-receipt-integration.patch
-
-git apply --check payment-receipt-integration.patch
-git apply payment-receipt-integration.patch
+```text
+apply_patch.sh
+payment-receipt-integration.patch
 ```
 
-`git apply --check` é obrigatório porque o repositório-fonte original não foi disponibilizado neste trabalho; o contexto de `lambda_function.py` foi reconstruído a partir do vídeo.
+O projeto deve estar em um repositório Git sem alterações locais pendentes.
 
-Se o check falhar, não aplique parcialmente. O caso mais provável é diferença de contexto somente no hunk de `lambda_function.py`; os arquivos novos permanecem independentes.
+## Aplicação recomendada
+
+```bash
+chmod +x apply_patch.sh
+./apply_patch.sh
+```
+
+O script executa automaticamente, nesta ordem:
+
+```text
+1. valida estrutura e estado do repositório;
+2. git apply --check payment-receipt-integration.patch;
+3. git apply payment-receipt-integration.patch;
+4. git diff --check;
+5. valida sintaxe Python em memória, sem gerar __pycache__.
+```
+
+Se houver arquivos não rastreados além do próprio script e do patch, ou alterações rastreadas/staged, o script aborta antes da aplicação.
+
+## Depois de aplicar
+
+Revise:
+
+```bash
+git diff --check
+git diff
+```
+
+Antes do deploy manual temporário, substitua **somente na cópia local** os placeholders do fallback de produção e empacote a dependência indicada em `requirements-temporary.txt`.
+
+Quando o Secrets Manager estiver disponível, remova integralmente o bloco marcado como `TEMPORÁRIO / PRODUÇÃO`, sua chamada no bootstrap e a dependência temporária.
+
+## Observação
+
+Este patch foi produzido por **engenharia reversa de um projeto de referência**. Como o repositório-fonte original completo não estava disponível, `git apply --check` é obrigatório para garantir compatibilidade com o contexto real antes de qualquer alteração.
