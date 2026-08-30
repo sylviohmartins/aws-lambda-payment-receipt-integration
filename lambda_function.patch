@@ -1,0 +1,34 @@
+--- a/lambda_function.py
++++ b/lambda_function.py
+@@
+ import json
++import os
++
++from src.client.comprovantes_api import consultar_comprovante
++from src.config.credentials import AwsSecretManagerConfig
+@@
+ logger = prepare_logger()
++
++
++def _bootstrap_sts():
++    # Mesmo padrão da Lambda de cancelamentos: ARN_SECRET -> CLIENT_ID/CLIENT_SECRET.
++    arn_secret = os.environ.get("ARN_SECRET", "")
++    AwsSecretManagerConfig(arn_secret).set_env_from_secret()
++
++
++_bootstrap_sts()
+@@
+-            # ENVIAR O ID + ...
+-            # SUBSTITUIR ... COM O VALOR DO "numero_autenticacao_comprovante"
++            # NOVA INTEGRAÇÃO COMPROVANTES:
++            # o código original já indicava este ponto e o campo
++            # "numero_autenticacao_comprovante" para a futura consulta.
++            identificador_comprovante = message.get("numero_autenticacao_comprovante")
++            if identificador_comprovante:
++                comprovante = consultar_comprovante(identificador_comprovante)
++
++                # TODO NOVA API COMPROVANTES:
++                # utilizar `comprovante` quando o contrato real da response for definido.
+ 
+             execute_with_retries(
+                 Dynamodb().update_item,
