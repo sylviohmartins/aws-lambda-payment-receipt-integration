@@ -24,7 +24,7 @@ class StsException(Exception):
 
 
 def gerar_token() -> str:
-    """Obtém token pelo fluxo client_credentials usado pela Lambda de cancelamentos."""
+    """Obtém token pelo fluxo client_credentials do projeto de referência."""
     token_url = os.environ.get("TOKEN_URL", "")
     client_id = os.environ.get("CLIENT_ID", "")
     client_secret = os.environ.get("CLIENT_SECRET", "")
