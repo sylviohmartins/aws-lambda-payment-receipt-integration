@@ -1,0 +1,2 @@
+# TEMPORÁRIO: remover junto com o fallback de credenciais após Secrets Manager.
+cryptography==46.0.4
