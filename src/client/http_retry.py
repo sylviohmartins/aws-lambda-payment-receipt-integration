@@ -1,3 +1,5 @@
+"""Política pequena e explícita de retry para chamadas HTTP transitórias."""
+
 import logging
 import random
 import time
@@ -8,9 +10,9 @@ import requests
 try:
     from src.utils.logger_util import prepare_logger
 
-    logger = prepare_logger()
+    logger = prepare_logger()  # pragma: no cover
 except (ImportError, ModuleNotFoundError):  # fallback apenas para execução isolada deste patch
-    logger = logging.getLogger(__name__)
+    logger = logging.getLogger(__name__)  # pragma: no cover
 
 
 MAX_ATTEMPTS = 3
@@ -20,6 +22,7 @@ RETRYABLE_EXCEPTIONS = (requests.Timeout, requests.ConnectionError)
 
 
 def _backoff(attempt: int) -> float:
+    """Calcula exponential backoff com pequeno jitter."""
     return BASE_BACKOFF_SECONDS * (2 ** (attempt - 1)) + random.uniform(0, 0.25)
 
 
