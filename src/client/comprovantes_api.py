@@ -1,3 +1,5 @@
+"""Cliente HTTP para consulta autenticada de comprovantes de pagamento."""
+
 import logging
 import os
 import time
@@ -10,9 +12,9 @@ from src.client.sts import gerar_token
 try:
     from src.utils.logger_util import prepare_logger
 
-    logger = prepare_logger()
+    logger = prepare_logger()  # pragma: no cover
 except (ImportError, ModuleNotFoundError):  # fallback apenas para execução isolada deste patch
-    logger = logging.getLogger(__name__)
+    logger = logging.getLogger(__name__)  # pragma: no cover
 
 
 COMPROVANTES_PATH = "/comprovantes/v3/comprovantes"
@@ -28,10 +30,12 @@ DEFAULT_CORRELATION_ID = "<FAKE_CORRELATION_ID>"
 
 
 def _base_url() -> str:
+    """Obtém e normaliza a base URL já usada pela API de cancelamentos."""
     return os.environ.get(BASE_URL_ENV, "").rstrip("/")
 
 
 def _headers(token: str) -> dict[str, str]:
+    """Monta os headers obrigatórios e bloqueia placeholders não configurados."""
     headers = {
         "Authorization": f"Bearer {token}",
         "x-apigw-api-id": os.environ.get("X_APIGW_API_ID", DEFAULT_X_APIGW_API_ID),
