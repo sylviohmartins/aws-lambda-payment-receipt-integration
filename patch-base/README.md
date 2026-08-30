@@ -1,1 +1,0 @@
-Arquivos auxiliares usados somente para gerar e validar o patch consolidado. Não fazem parte do código a ser aplicado na Lambda.
