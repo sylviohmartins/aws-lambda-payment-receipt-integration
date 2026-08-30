@@ -124,3 +124,23 @@ def test_placeholders_nao_podem_ser_enviados_acidentalmente():
             raise AssertionError("Era esperado bloqueio dos placeholders")
 
     get.assert_not_called()
+
+
+def test_base_url_e_identificador_sao_obrigatorios():
+    env = _env()
+    env.pop("BOLETOS_API_BASE_URL")
+    with patch.dict(os.environ, env, clear=True):
+        try:
+            consultar_comprovante("COMP-123")
+        except ValueError as exc:
+            assert "Base URL" in str(exc)
+        else:
+            raise AssertionError("Era esperado erro de base URL")
+
+    with patch.dict(os.environ, _env(), clear=True):
+        try:
+            consultar_comprovante("")
+        except ValueError as exc:
+            assert "identificador_comprovante" in str(exc)
+        else:
+            raise AssertionError("Era esperado erro de identificador")
