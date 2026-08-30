@@ -1,3 +1,5 @@
+"""Cliente STS/OAuth usado para obter access token via client_credentials."""
+
 import logging
 import os
 
@@ -9,9 +11,9 @@ from src.client.http_retry import request_with_retries
 try:
     from src.utils.logger_util import prepare_logger
 
-    logger = prepare_logger()
+    logger = prepare_logger()  # pragma: no cover
 except (ImportError, ModuleNotFoundError):  # fallback apenas para execução isolada deste patch
-    logger = logging.getLogger(__name__)
+    logger = logging.getLogger(__name__)  # pragma: no cover
 
 
 TOKEN_TIMEOUT_SECONDS = 10
