@@ -1,6 +1,14 @@
 # Validação
 
-## Resultado
+## Patch canônico
+
+- branch: `patch-delivery`
+- commit: `ea111b11c3383af5b6beab74728eb2cae824856d`
+- `.patch`: `https://github.com/sylviohmartins/aws-lambda-payment-receipt-integration/commit/ea111b11c3383af5b6beab74728eb2cae824856d.patch`
+
+Esse commit foi construído sobre um baseline sintético contendo os pontos de contexto reconstruídos da Lambda original. O diff do commit foi conferido no GitHub e contém a modificação de `lambda_function.py` mais os nove arquivos novos necessários à integração e aos testes.
+
+## Resultado local
 
 - `git apply --check payment-receipt-integration.patch`: **PASSOU** em fixture com os pontos de contexto reconstruídos da Lambda original.
 - `git apply payment-receipt-integration.patch`: **PASSOU** na mesma fixture.
@@ -8,6 +16,7 @@
 - `PYTHONPATH=. pytest -q --cov=src.client --cov=src.config --cov-branch --cov-report=term-missing --cov-fail-under=100`: **PASSOU**.
 - testes: **30 passed**.
 - cobertura dos quatro arquivos novos de produção: **100% statements e 100% branches**.
+- `git diff --check`: **PASSOU**.
 - chamadas reais à AWS/STS/API durante testes: **NÃO REALIZADAS**.
 
 ## Comportamentos validados
@@ -27,13 +36,13 @@
 
 ## Segurança do fallback temporário
 
-O repositório público contém apenas placeholders. Nenhuma credencial extraída da imagem foi adicionada ao código, documentação ou patch.
+O repositório público contém apenas placeholders. Nenhuma credencial fornecida para os ambientes foi adicionada ao código, documentação ou patch.
 
-A chave Fernet deve preferencialmente ser configurada em `TEMP_CREDENTIALS_KEY` no ambiente da Lambda. Colocar a chave e o ciphertext juntos no código reduz o mecanismo a ofuscação e não deve ser commitado.
+A chave Fernet deve preferencialmente ser configurada em `TEMP_CREDENTIALS_KEY` no ambiente da Lambda. O código também contém um placeholder local para permitir uma cópia de deploy totalmente temporária, mas colocar chave e ciphertext juntos no mesmo fonte reduz o mecanismo a ofuscação e essa versão nunca deve ser commitada.
 
 ## Limitação do `git apply`
 
-O código-fonte original da Lambda de update de retorno de tributos não foi fornecido como repositório/arquivo; ele foi reconstruído a partir de vídeo. Portanto, a validade estrutural do patch foi comprovada em uma fixture contendo os três pontos de contexto observados (`import json`, `logger = prepare_logger()` e `execute_with_retries(Dynamodb().update_item, ...)`).
+O código-fonte original da Lambda de update de retorno de tributos não foi fornecido como repositório/arquivo; ele foi reconstruído a partir de vídeo. Portanto, a validade estrutural do patch foi comprovada em uma fixture contendo os pontos de contexto observados (`import json`, `logger = prepare_logger()` e `execute_with_retries(Dynamodb().update_item, ...)`).
 
 Antes de aplicar no repositório corporativo real, execute obrigatoriamente:
 
