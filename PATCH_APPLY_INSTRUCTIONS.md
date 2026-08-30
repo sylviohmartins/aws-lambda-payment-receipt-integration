@@ -2,14 +2,7 @@
 
 ## Pré-requisito
 
-Coloque na raiz do projeto-alvo, no mesmo nível de `lambda_function.py` e `src/`:
-
-```text
-apply_patch.sh
-payment-receipt-integration.patch
-```
-
-O projeto deve estar em um repositório Git sem alterações locais pendentes.
+Coloque `apply_patch.sh` na raiz do projeto-alvo, no mesmo nível de `lambda_function.py` e `src/`. O projeto deve estar em um repositório Git sem alterações locais pendentes.
 
 ## Aplicação recomendada
 
@@ -18,17 +11,24 @@ chmod +x apply_patch.sh
 ./apply_patch.sh
 ```
 
-O script executa automaticamente, nesta ordem:
+Sem argumentos, o script baixa o patch canônico do commit dedicado e executa automaticamente:
 
 ```text
 1. valida estrutura e estado do repositório;
-2. git apply --check payment-receipt-integration.patch;
-3. git apply payment-receipt-integration.patch;
-4. git diff --check;
-5. valida sintaxe Python em memória, sem gerar __pycache__.
+2. baixa payment-receipt-integration.patch;
+3. git apply --check;
+4. git apply;
+5. git diff --check;
+6. valida sintaxe Python em memória, sem gerar __pycache__.
 ```
 
-Se houver arquivos não rastreados além do próprio script e do patch, ou alterações rastreadas/staged, o script aborta antes da aplicação.
+Também é possível passar um patch local explicitamente:
+
+```bash
+./apply_patch.sh ./payment-receipt-integration.patch
+```
+
+Se houver arquivos não rastreados além do próprio script/patch, ou alterações rastreadas/staged, o script aborta antes da aplicação.
 
 ## Depois de aplicar
 
