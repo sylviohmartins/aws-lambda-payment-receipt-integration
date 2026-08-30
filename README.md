@@ -78,14 +78,9 @@ A estrutura foi mantida propositalmente pequena, sem factories, registries ou ca
 
 ## Aplicação no projeto real
 
-Coloque estes dois arquivos na **raiz do projeto-alvo**, no mesmo nível de `lambda_function.py` e `src/`:
+Coloque `apply_patch.sh` na **raiz do projeto-alvo**, no mesmo nível de `lambda_function.py` e `src/`. O script baixa automaticamente o patch canônico e o valida antes da aplicação.
 
-```text
-apply_patch.sh
-payment-receipt-integration.patch
-```
-
-Depois execute:
+Execute:
 
 ```bash
 chmod +x apply_patch.sh
@@ -97,10 +92,10 @@ O script valida:
 1. que está em um repositório Git;
 2. que `lambda_function.py` e `src/` existem na raiz;
 3. que não há alterações locais pendentes;
-4. `git apply --check`;
-5. aplicação do patch;
-6. `git diff --check`;
-7. validação de sintaxe Python em memória, sem gerar `__pycache__`.
+4. download do patch canônico;
+5. `git apply --check`;
+6. aplicação do patch;
+7. `git diff --check` e validação de sintaxe Python em memória, sem gerar `__pycache__`.
 
 Veja também `PATCH_APPLY_INSTRUCTIONS.md`.
 
