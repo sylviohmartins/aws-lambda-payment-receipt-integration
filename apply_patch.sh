@@ -16,7 +16,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-CANONICAL_PATCH_URL="https://github.com/sylviohmartins/aws-lambda-payment-receipt-integration/commit/6fac457b366d5ab5504134da5a2ef99b275740dc.patch"
+CANONICAL_PATCH_URL="https://github.com/sylviohmartins/aws-lambda-payment-receipt-integration/commit/68288c391c671926aec85352499c0f3dc0e15227.patch"
 PATCH_FILE="${1:-payment-receipt-integration.patch}"
 
 fail() {
