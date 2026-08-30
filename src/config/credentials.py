@@ -1,9 +1,8 @@
 """Carregamento de credenciais STS.
 
 O caminho permanente continua sendo o AWS Secrets Manager. Existe também um
-fallback temporário, claramente delimitado, para permitir o deploy manual antes
-da criação dos recursos de infraestrutura. Esse bloco deve ser removido assim
-que ``ARN_SECRET`` estiver disponível em todos os ambientes.
+fallback de código, temporário e restrito ao deploy manual em produção, para o
+intervalo anterior ao provisionamento da infraestrutura definitiva.
 """
 
 import json
@@ -38,7 +37,7 @@ class AwsSecretManagerConfig:
         self.region = region or os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
 
     def set_env_from_secret(self) -> None:
-        """Mantém o comportamento original: sem ARN, não executa I/O."""
+        """Mantém o comportamento permanente: sem ARN, não executa I/O."""
         if not self.secret_arn:
             return
 
@@ -67,66 +66,36 @@ class AwsSecretManagerConfig:
 
 
 # ---------------------------------------------------------------------------
-# TEMPORÁRIO — REMOVER ESTE BLOCO INTEIRO ASSIM QUE O SECRETS MANAGER EXISTIR.
+# TEMPORÁRIO / PRODUÇÃO — REMOVER ESTE BLOCO INTEIRO QUANDO O SECRET EXISTIR.
 # ---------------------------------------------------------------------------
-# O ciphertext pode ficar hardcoded temporariamente. A chave de descriptografia
-# NÃO deve ser commitada junto com ele. Para o deploy manual, prefira informar
-# TEMP_CREDENTIALS_KEY como environment variable da própria Lambda.
+# Este fallback existe exclusivamente para o deploy manual temporário em PROD.
+# Não há detecção de DEV/HML/PROD: os dois ciphertexts abaixo são os de produção.
 #
-# Se chave + ciphertext forem colocados no mesmo código, isso é apenas
-# ofuscação, não proteção criptográfica. O repositório público mantém somente
-# placeholders para impedir exposição acidental de credenciais reais.
-_TEMP_ENCRYPTED_CREDENTIALS = {
-    "dev": {
-        "client_id": "<TEMP_ENCRYPTED_CLIENT_ID_DEV>",
-        "client_secret": "<TEMP_ENCRYPTED_CLIENT_SECRET_DEV>",
-    },
-    "hml": {
-        "client_id": "<TEMP_ENCRYPTED_CLIENT_ID_HML>",
-        "client_secret": "<TEMP_ENCRYPTED_CLIENT_SECRET_HML>",
-    },
-    "prod": {
-        "client_id": "<TEMP_ENCRYPTED_CLIENT_ID_PROD>",
-        "client_secret": "<TEMP_ENCRYPTED_CLIENT_SECRET_PROD>",
-    },
-}
+# Passos para remoção futura:
+#   1. excluir deste marcador até "FIM DO BLOCO TEMPORÁRIO";
+#   2. remover o import/chamada de set_env_from_temporary_encrypted_credentials
+#      do bootstrap em lambda_function.py;
+#   3. remover requirements-temporary.txt / cryptography do pacote.
+#
+# O ciphertext pode ficar hardcoded somente na cópia local do deploy. A chave
+# deve preferencialmente ser informada em TEMP_CREDENTIALS_KEY. Se chave e
+# ciphertext forem colocados juntos no fonte, o mecanismo é apenas ofuscação.
+# Nunca commite credenciais, ciphertexts reais ou a chave neste repositório.
+_TEMP_ENCRYPTED_CLIENT_ID = "<TEMP_ENCRYPTED_CLIENT_ID_PROD>"
+_TEMP_ENCRYPTED_CLIENT_SECRET = "<TEMP_ENCRYPTED_CLIENT_SECRET_PROD>"
 _TEMP_LOCAL_KEY = "<TEMP_FERNET_KEY_LOCAL_ONLY>"
-_TEMP_SUPPORTED_ENVS = frozenset(_TEMP_ENCRYPTED_CREDENTIALS)
 
 
-def _temporary_environment() -> str:
-    """Resolve DEV/HML/PROD apenas para o fallback temporário."""
-    value = (os.environ.get("APP_ENV") or os.environ.get("ENVIRONMENT") or "").strip().lower()
-    if value not in _TEMP_SUPPORTED_ENVS:
-        raise StsException("APP_ENV/ENVIRONMENT deve ser dev, hml ou prod no fallback temporário")
-    return value
+def set_env_from_temporary_encrypted_credentials() -> None:  # pragma: no cover
+    """Descriptografa o fallback temporário de PROD durante o cold start.
 
+    Não há seleção de ambiente. A função só é chamada quando o caminho
+    permanente não carregou ``CLIENT_ID``/``CLIENT_SECRET``. Após a primeira
+    execução, os valores permanecem no processo e são reutilizados nas warm
+    invocations.
 
-def _temporary_key() -> bytes:
-    """Obtém a chave Fernet sem obrigar infraestrutura adicional."""
-    value = (os.environ.get("TEMP_CREDENTIALS_KEY") or _TEMP_LOCAL_KEY).strip()
-    if not value or value.startswith("<TEMP_"):
-        raise StsException(
-            "TEMP_CREDENTIALS_KEY não configurada; defina-a manualmente na Lambda "
-            "ou substitua o placeholder somente na cópia local de deploy"
-        )
-    return value.encode("utf-8")
-
-
-def _temporary_ciphertext(app_env: str, field: str) -> str:
-    """Retorna o ciphertext configurado para o ambiente/campo solicitado."""
-    value = _TEMP_ENCRYPTED_CREDENTIALS[app_env][field]
-    if not value or value.startswith("<TEMP_ENCRYPTED_"):
-        raise StsException(f"Ciphertext temporário não configurado para {field} em {app_env}")
-    return value
-
-
-def set_env_from_temporary_encrypted_credentials() -> None:
-    """Descriptografa credenciais temporárias uma única vez no cold start.
-
-    A função só deve ser chamada quando o caminho permanente de Secrets Manager
-    não tiver populado ``CLIENT_ID``/``CLIENT_SECRET``. Os valores descriptografados
-    são mantidos em ``os.environ`` e reaproveitados nas warm invocations.
+    Este método é deliberadamente excluído da cobertura por ser código
+    transitório que será removido assim que o Secrets Manager for provisionado.
     """
     if os.environ.get("CLIENT_ID") and os.environ.get("CLIENT_SECRET"):
         return
@@ -138,15 +107,25 @@ def set_env_from_temporary_encrypted_credentials() -> None:
             "Dependência temporária 'cryptography' não está empacotada na Lambda"
         ) from exc
 
-    app_env = _temporary_environment()
+    key = (os.environ.get("TEMP_CREDENTIALS_KEY") or _TEMP_LOCAL_KEY).strip()
+    if not key or key.startswith("<TEMP_"):
+        raise StsException(
+            "TEMP_CREDENTIALS_KEY não configurada; informe a chave manualmente "
+            "ou substitua o placeholder somente na cópia local do deploy"
+        )
+
+    if (
+        not _TEMP_ENCRYPTED_CLIENT_ID
+        or _TEMP_ENCRYPTED_CLIENT_ID.startswith("<TEMP_ENCRYPTED_")
+        or not _TEMP_ENCRYPTED_CLIENT_SECRET
+        or _TEMP_ENCRYPTED_CLIENT_SECRET.startswith("<TEMP_ENCRYPTED_")
+    ):
+        raise StsException("Ciphertexts temporários de produção não configurados")
+
     try:
-        fernet = Fernet(_temporary_key())
-        client_id = fernet.decrypt(
-            _temporary_ciphertext(app_env, "client_id").encode("utf-8")
-        ).decode("utf-8")
-        client_secret = fernet.decrypt(
-            _temporary_ciphertext(app_env, "client_secret").encode("utf-8")
-        ).decode("utf-8")
+        fernet = Fernet(key.encode("utf-8"))
+        client_id = fernet.decrypt(_TEMP_ENCRYPTED_CLIENT_ID.encode("utf-8")).decode("utf-8")
+        client_secret = fernet.decrypt(_TEMP_ENCRYPTED_CLIENT_SECRET.encode("utf-8")).decode("utf-8")
     except (ValueError, InvalidToken, UnicodeDecodeError) as exc:
         logger.error("Falha ao descriptografar credenciais temporárias: %s", type(exc).__name__)
         raise StsException("Credenciais temporárias inválidas") from exc
@@ -156,10 +135,7 @@ def set_env_from_temporary_encrypted_credentials() -> None:
 
     os.environ["CLIENT_ID"] = client_id
     os.environ["CLIENT_SECRET"] = client_secret
-    logger.warning(
-        "Credenciais STS carregadas pelo fallback TEMPORÁRIO de código para ambiente %s",
-        app_env,
-    )
+    logger.warning("Credenciais STS carregadas pelo fallback TEMPORÁRIO de produção")
 # ---------------------------------------------------------------------------
 # FIM DO BLOCO TEMPORÁRIO.
 # ---------------------------------------------------------------------------
