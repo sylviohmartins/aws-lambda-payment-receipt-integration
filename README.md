@@ -1,37 +1,43 @@
 # AWS Lambda Payment Receipt Integration
 
-Patch de referência para adicionar à Lambda de update de retorno de tributos a autenticação STS e a consulta de comprovante, preservando o fluxo existente.
+Implementação de referência para acrescentar autenticação STS e uma consulta HTTP autenticada a uma AWS Lambda existente, preservando o fluxo original e mantendo o diff pequeno.
 
-## Fluxo permanente
+## Origem
+
+Este repositório **não é um fork do código-fonte original**. A solução foi produzida por **engenharia reversa de um projeto de referência**, a partir de evidências disponíveis do comportamento e da estrutura do código, e depois materializada como um patch independente.
+
+Por esse motivo, o patch deve sempre ser validado com `git apply --check` no repositório real antes da aplicação.
+
+## Fluxo
 
 ```text
-ARN_SECRET
-  -> Secrets Manager
-  -> CLIENT_ID / CLIENT_SECRET
+credenciais
+  -> Secrets Manager (caminho permanente)
+  -> fallback temporário de PROD, somente enquanto o secret não existir
   -> STS client_credentials
   -> Bearer token
-  -> GET /comprovantes/v3/comprovantes/{numero_autenticacao_comprovante}
+  -> GET /comprovantes/v3/comprovantes/{identificador}
+  -> resposta JSON
   -> fluxo original continua
 ```
 
-## Fallback temporário sem nova infraestrutura
+A consulta é `GET` e não possui body.
 
-Enquanto o Secrets Manager ainda não existir, o patch contém um bloco explicitamente marcado como **TEMPORÁRIO** em `src/config/credentials.py`. O caminho permanente de `AwsSecretManagerConfig.set_env_from_secret()` continua intacto.
+## Fallback temporário de produção
 
-O fallback usa `cryptography.fernet` para descriptografar ciphertexts separados por `dev`, `hml` e `prod` durante o cold start. Depois de carregar `CLIENT_ID`/`CLIENT_SECRET` em memória, warm invocations reaproveitam os valores.
+O caminho permanente continua sendo o Secrets Manager. Enquanto a infraestrutura ainda não estiver provisionada, existe um bloco **TEMPORÁRIO / PRODUÇÃO** em `src/config/credentials.py`.
 
-**Importante:** ciphertext + chave no mesmo fonte não é proteção real. Para o deploy manual temporário, o modo recomendado é:
+Esse bloco:
 
-1. manter somente os ciphertexts no código local;
-2. informar `TEMP_CREDENTIALS_KEY` manualmente como environment variable da Lambda;
-3. não commitar a chave nem as credenciais reais;
-4. quando o Secrets Manager estiver disponível, remover integralmente o bloco temporário e `requirements-temporary.txt`.
+- não tenta identificar ambiente;
+- contém apenas placeholders para os ciphertexts de produção;
+- descriptografa uma única vez no cold start quando `CLIENT_ID`/`CLIENT_SECRET` ainda não existem;
+- está delimitado por comentários de início/fim para ser removido integralmente depois;
+- é excluído da métrica de cobertura porque é código transitório e não faz parte da solução permanente.
 
-Isso não exige criar um recurso AWS adicional.
+Não publique credenciais, ciphertexts reais ou a chave neste repositório público.
 
-### Gerar chave e ciphertexts localmente
-
-Instale a dependência temporária e execute localmente, sem colar o resultado no GitHub público:
+### Gerar ciphertexts localmente
 
 ```bash
 pip install -r requirements-temporary.txt
@@ -48,37 +54,58 @@ for name in ("CLIENT_ID", "CLIENT_SECRET"):
 PY
 ```
 
-Gere um par de ciphertexts para cada ambiente e substitua os placeholders somente na cópia local aplicada ao repositório corporativo. Não publique os valores neste repositório.
+Substitua os placeholders somente na cópia local usada no deploy manual.
 
-## Patch consolidado
+## Estrutura
 
-O patch canônico é gerado pelo commit dedicado abaixo, na branch `patch-delivery`:
+```text
+src/
+├── client/
+│   ├── comprovantes_api.py
+│   ├── http_retry.py
+│   └── sts.py
+└── config/
+    └── credentials.py
 
-- commit: `ea111b11c3383af5b6beab74728eb2cae824856d`
-- patch: `https://github.com/sylviohmartins/aws-lambda-payment-receipt-integration/commit/ea111b11c3383af5b6beab74728eb2cae824856d.patch`
-
-Na raiz do repositório original:
-
-```bash
-curl -L \
-  https://github.com/sylviohmartins/aws-lambda-payment-receipt-integration/commit/ea111b11c3383af5b6beab74728eb2cae824856d.patch \
-  -o payment-receipt-integration.patch
-
-git apply --check payment-receipt-integration.patch
-git apply payment-receipt-integration.patch
+tests/
+├── test_comprovantes_api.py
+├── test_credentials.py
+├── test_http_retry.py
+└── test_sts.py
 ```
 
-O commit foi construído com um baseline sintético que contém os pontos de contexto reconstruídos do vídeo. Por isso `git apply --check` é obrigatório no repositório corporativo real antes da aplicação.
+A estrutura foi mantida propositalmente pequena, sem factories, registries ou camadas adicionais desnecessárias.
 
-Depois, substitua os placeholders temporários localmente e empacote `cryptography` para o runtime Lambda antes do deploy manual.
+## Aplicação no projeto real
 
-## Validação
+Coloque estes dois arquivos na **raiz do projeto-alvo**, no mesmo nível de `lambda_function.py` e `src/`:
 
-```bash
-python -m compileall -q src tests
-PYTHONPATH=. pytest -q --cov=src.client --cov=src.config --cov-branch --cov-report=term-missing --cov-fail-under=100
+```text
+apply_patch.sh
+payment-receipt-integration.patch
 ```
 
-Resultado da versão publicada: **30 testes, 100% de statements e 100% de branches nos quatro arquivos novos de produção**.
+Depois execute:
 
-Nenhum teste realiza chamadas reais à AWS, STS ou API de comprovantes.
+```bash
+chmod +x apply_patch.sh
+./apply_patch.sh
+```
+
+O script valida:
+
+1. que está em um repositório Git;
+2. que `lambda_function.py` e `src/` existem na raiz;
+3. que não há alterações locais pendentes;
+4. `git apply --check`;
+5. aplicação do patch;
+6. `git diff --check`;
+7. validação de sintaxe Python em memória, sem gerar `__pycache__`.
+
+Veja também `PATCH_APPLY_INSTRUCTIONS.md`.
+
+## Testes e qualidade
+
+O código permanente novo possui testes unitários com cobertura de **100% de statements e branches**. O bloco temporário de credenciais é explicitamente excluído da cobertura por ser removível e transitório.
+
+Nenhum teste realiza chamadas reais à AWS, ao STS ou à API HTTP.
