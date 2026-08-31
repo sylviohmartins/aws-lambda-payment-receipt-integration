@@ -60,6 +60,10 @@ PROFILE_TFVARS_KEYS = (
     "aws_cli_profile",
     "profile",
 )
+HCL_DECLARATION_BLOCKS = {
+    "variable",
+    "output",
+}
 
 _VAR_EXPRESSION = re.compile(r"^\$\{var\.([A-Za-z0-9_]+)\}$")
 _VAR_INTERPOLATION = re.compile(r"\$\{var\.([A-Za-z0-9_]+)\}")
@@ -802,9 +806,18 @@ def _load_hcl(path: Path) -> dict[str, Any]:
 
 
 def _find_values(node: Any, key: str) -> list[Any]:
+    """Finds effective HCL assignments while ignoring declarative blocks.
+
+    Terraform declarations such as ``variable \"environment_variables\"`` may
+    contain metadata/defaults that look like runtime assignments when traversed
+    recursively. Those declaration blocks are intentionally skipped so only
+    effective configuration assignments are returned.
+    """
     found: list[Any] = []
     if isinstance(node, dict):
         for current_key, value in node.items():
+            if current_key in HCL_DECLARATION_BLOCKS:
+                continue
             if current_key == key:
                 found.append(value)
             found.extend(_find_values(value, key))
