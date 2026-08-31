@@ -2,36 +2,43 @@
 
 ## Escopo
 
-A implementação foi construída por **engenharia reversa de um projeto de referência**, sem acesso ao repositório-fonte original completo. O objetivo foi reproduzir somente o mecanismo necessário para autenticação STS, consulta HTTP e integração mínima com o fluxo existente.
+A implementação foi construída por **engenharia reversa de um projeto de referência**, sem acesso ao repositório-fonte original completo. O objetivo é reproduzir somente o mecanismo necessário para autenticação STS, consulta HTTP e integração mínima com o fluxo existente.
 
-## Validações executadas
-
-- `git apply --check`: passou em fixture que reproduz os pontos de contexto observados.
-- `git apply`: aplicou integralmente na mesma fixture.
-- validação de sintaxe Python em memória: passou.
-- `pytest` com branch coverage: **23 passed**, com 100% nos arquivos permanentes novos.
-- `git diff --check`: passou.
-- chamadas reais externas durante testes: não realizadas.
-
-## Comportamentos permanentes cobertos
+## Comportamentos cobertos pelos testes
 
 - Secrets Manager continua sendo o caminho principal de credenciais;
+- fallback temporário permanece restrito a PROD e removível em bloco;
 - STS usa `client_credentials` com HTTP Basic Auth;
-- chamadas STS possuem timeout e retry para falhas transitórias;
+- `TOKEN_URL`, `API_BASE_URL`, `X_APIGW_API_ID` e `X_ITAU_FLOW_ID` aceitam configuração por variável de ambiente;
 - consulta de comprovante usa `GET` sem body;
-- Bearer token e headers necessários são enviados;
+- `CLIENT_ID` é reutilizado nos headers `x-itau-apikey` e `x-itau-apikey-internal`;
+- `x-itau-correlationID` é um UUID novo por chamada;
+- a consulta recebe `numero_comprovante` e retorna somente `data.identificacao.numero_autenticacao_comprovante`;
+- resposta vazia, JSON inválido e ausência do campo esperado falham explicitamente;
 - falhas HTTP transitórias usam retry com backoff e jitter;
 - erros 4xx não transitórios não são repetidos;
-- logs não exibem token, secret ou API keys.
+- logs são interpolados antes do envio ao logger e incluem detalhes da exceção sem expor credenciais.
 
-## Fallback temporário
+## Comandos de validação
 
-O fallback de credenciais é exclusivamente de **produção** e não contém seleção de ambiente. Ele existe somente para permitir um deploy manual antes do provisionamento do secret definitivo.
+```bash
+python -m compileall -q .
+PYTHONPATH=. pytest -q
+```
 
-O bloco está claramente delimitado em `src/config/credentials.py` e marcado com `# pragma: no cover`, pois deve ser removido quando a infraestrutura permanente estiver disponível. Não foram criados testes unitários específicos para esse trecho transitório.
+Os testes usam mocks e não devem realizar chamadas reais à AWS, ao STS ou à API HTTP.
 
-## Limitação do patch
+## Segurança
 
-Como o código-fonte original completo não fez parte desta análise, o contexto de `lambda_function.py` foi reconstruído. Por isso o script de aplicação executa obrigatoriamente `git apply --check` antes de modificar qualquer arquivo.
+O repositório público contém somente placeholders para URLs/IDs de PROD e para o fallback temporário de credenciais. Não publique:
 
-Se o check falhar, o script encerra sem aplicar o patch. Nesse caso, deve-se ajustar somente o hunk de contexto de `lambda_function.py` ao código real, preservando os novos arquivos.
+- `CLIENT_SECRET`;
+- token STS;
+- Authorization header;
+- API keys reais;
+- ciphertexts reais;
+- chave Fernet temporária.
+
+## Limitação de aplicação
+
+Como o código-fonte original completo não fez parte da análise, qualquer integração com `lambda_function.py` do projeto real deve ser revisada no contexto da versão corporativa antes do deploy.

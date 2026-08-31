@@ -1,27 +1,60 @@
 # AWS Lambda Payment Receipt Integration
 
-Implementação de referência para acrescentar autenticação STS e uma consulta HTTP autenticada a uma AWS Lambda existente, preservando o fluxo original e mantendo o diff pequeno.
+Implementação de referência para acrescentar autenticação STS e consulta HTTP autenticada de comprovante a uma AWS Lambda existente, preservando o fluxo original e mantendo a alteração pequena.
 
 ## Origem
 
-Este repositório **não é um fork do código-fonte original**. A solução foi produzida por **engenharia reversa de um projeto de referência**, a partir de evidências disponíveis do comportamento e da estrutura do código, e depois materializada como um patch independente.
-
-Por esse motivo, o patch deve sempre ser validado com `git apply --check` no repositório real antes da aplicação.
+Este repositório **não é um fork do código-fonte original**. A solução foi produzida por **engenharia reversa de um projeto de referência** e materializada como integração independente.
 
 ## Fluxo
 
 ```text
 credenciais
   -> Secrets Manager (caminho permanente)
-  -> fallback temporário de PROD, somente enquanto o secret não existir
+  -> fallback temporário de PROD enquanto o secret não existir
   -> STS client_credentials
   -> Bearer token
-  -> GET /comprovantes/v3/comprovantes/{identificador}
-  -> resposta JSON
+  -> GET /comprovantes/v3/comprovantes/{numero_comprovante}
+  -> data.identificacao.numero_autenticacao_comprovante
   -> fluxo original continua
 ```
 
-A consulta é `GET` e não possui body.
+A consulta é `GET` sem body e retorna para o chamador somente `numero_autenticacao_comprovante`.
+
+## Configuração por ambiente
+
+Valores que variam por ambiente seguem o padrão simples **variável de ambiente -> fallback de PROD**:
+
+- `TOKEN_URL`
+- `API_BASE_URL`
+- `X_APIGW_API_ID`
+- `X_ITAU_FLOW_ID`
+
+No repositório público os fallbacks permanecem como placeholders. Na cópia de deploy, eles podem ser preenchidos com os valores de PROD até a infraestrutura passar a fornecer as variáveis.
+
+`CLIENT_ID` e `CLIENT_SECRET` seguem o fluxo de credenciais. O `CLIENT_ID` também é reutilizado em `x-itau-apikey` e `x-itau-apikey-internal`. `x-itau-correlationID` é gerado por `uuid.uuid4()` a cada chamada.
+
+## Observabilidade
+
+Os logs das integrações usam mensagens já interpoladas, evitando placeholders literais como `%s` e `%.2f`. Em falhas são registrados, quando disponíveis:
+
+- operação;
+- tentativa/retry;
+- HTTP status;
+- tipo da exceção;
+- mensagem da exceção;
+- stack trace no erro definitivo.
+
+Token, `CLIENT_SECRET`, Authorization e API keys não são logados.
+
+## Retry
+
+STS e consulta de comprovante repetem somente falhas transitórias:
+
+- timeout/conexão;
+- HTTP `429`, `500`, `502`, `503` e `504`.
+
+A política usa exponential backoff com jitter e máximo padrão de 3 tentativas. Erros 4xx não transitórios não são repetidos.
 
 ## Fallback temporário de produção
 
@@ -29,13 +62,11 @@ O caminho permanente continua sendo o Secrets Manager. Enquanto a infraestrutura
 
 Esse bloco:
 
-- não tenta identificar ambiente;
-- contém apenas placeholders para os ciphertexts de produção;
-- descriptografa uma única vez no cold start quando `CLIENT_ID`/`CLIENT_SECRET` ainda não existem;
-- está delimitado por comentários de início/fim para ser removido integralmente depois;
-- é excluído da métrica de cobertura porque é código transitório e não faz parte da solução permanente.
-
-Não publique credenciais, ciphertexts reais ou a chave neste repositório público.
+- não seleciona DEV/HML/PROD;
+- contém apenas placeholders para os ciphertexts de produção e chave local temporária;
+- descriptografa no cold start quando `CLIENT_ID`/`CLIENT_SECRET` ainda não existem;
+- está delimitado para remoção integral posterior;
+- não deve conter valores reais no repositório público.
 
 ### Gerar ciphertexts localmente
 
@@ -54,7 +85,7 @@ for name in ("CLIENT_ID", "CLIENT_SECRET"):
 PY
 ```
 
-Substitua os placeholders somente na cópia local usada no deploy manual.
+Substitua os placeholders somente na cópia local usada no deploy manual e não versione os valores reais.
 
 ## Estrutura
 
@@ -74,33 +105,4 @@ tests/
 └── test_sts.py
 ```
 
-A estrutura foi mantida propositalmente pequena, sem factories, registries ou camadas adicionais desnecessárias.
-
-## Aplicação no projeto real
-
-Coloque `apply_patch.sh` na **raiz do projeto-alvo**, no mesmo nível de `lambda_function.py` e `src/`. O script baixa automaticamente o patch canônico e o valida antes da aplicação.
-
-Execute:
-
-```bash
-chmod +x apply_patch.sh
-./apply_patch.sh
-```
-
-O script valida:
-
-1. que está em um repositório Git;
-2. que `lambda_function.py` e `src/` existem na raiz;
-3. que não há alterações locais pendentes;
-4. download do patch canônico;
-5. `git apply --check`;
-6. aplicação do patch;
-7. `git diff --check` e validação de sintaxe Python em memória, sem gerar `__pycache__`.
-
-Veja também `PATCH_APPLY_INSTRUCTIONS.md`.
-
-## Testes e qualidade
-
-O código permanente novo possui testes unitários com cobertura de **100% de statements e branches**. O bloco temporário de credenciais é explicitamente excluído da cobertura por ser removível e transitório.
-
-Nenhum teste realiza chamadas reais à AWS, ao STS ou à API HTTP.
+Nenhum teste deve realizar chamadas reais à AWS, ao STS ou à API HTTP.

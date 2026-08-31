@@ -39,24 +39,35 @@ def test_retorna_ultimo_status_transitorio_ao_esgotar_tentativas():
     assert fn.call_count == 2
 
 
-def test_repete_timeout_e_recupera():
+def test_repete_timeout_e_recupera_com_log_interpolado():
     response = Mock(status_code=200)
-    fn = Mock(side_effect=[requests.Timeout("timeout"), response])
+    fn = Mock(side_effect=[requests.Timeout("timeout detalhado"), response])
     with patch("src.client.http_retry._backoff", return_value=0), patch(
         "src.client.http_retry.time.sleep"
-    ):
+    ), patch("src.client.http_retry.logger.warning") as warning:
         assert request_with_retries(fn, operation="op") is response
+
     assert fn.call_count == 2
+    message = warning.call_args.args[0]
+    assert "Timeout" in message
+    assert "timeout detalhado" in message
+    assert "%s" not in message
 
 
-def test_propaga_timeout_apos_esgotar_tentativas():
-    fn = Mock(side_effect=requests.Timeout("timeout"))
+def test_propaga_timeout_apos_esgotar_tentativas_com_log_detalhado():
+    fn = Mock(side_effect=requests.Timeout("timeout final"))
     with patch("src.client.http_retry._backoff", return_value=0), patch(
         "src.client.http_retry.time.sleep"
-    ):
+    ), patch("src.client.http_retry.logger.error") as error:
         with pytest.raises(requests.Timeout):
             request_with_retries(fn, operation="op", max_attempts=2)
+
     assert fn.call_count == 2
+    message = error.call_args.args[0]
+    assert "Timeout" in message
+    assert "timeout final" in message
+    assert "%s" not in message
+    assert error.call_args.kwargs["exc_info"] is True
 
 
 def test_zero_tentativas_expoe_fluxo_invalido():

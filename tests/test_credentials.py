@@ -20,7 +20,9 @@ def test_secret_manager_sem_arn_preserva_comportamento_original_e_nao_chama_aws(
 def test_secret_manager_carrega_client_id_e_secret_com_retry_aws_configurado():
     client = Mock()
     client.get_secret_value.return_value = {
-        "SecretString": json.dumps({"client_id": "fake-client", "client_secret": "fake-secret"})
+        "SecretString": json.dumps(
+            {"client_id": "fake-client", "client_secret": "fake-secret"}
+        )
     }
 
     with patch.dict(os.environ, {}, clear=True), patch(
@@ -40,6 +42,7 @@ def test_secret_manager_carrega_client_id_e_secret_com_retry_aws_configurado():
 def test_secret_manager_rejeita_secret_sem_credenciais():
     client = Mock()
     client.get_secret_value.return_value = {"SecretString": "{}"}
+
     with patch.dict(os.environ, {}, clear=True), patch(
         "src.config.credentials.boto3.client", return_value=client
     ):
@@ -47,9 +50,15 @@ def test_secret_manager_rejeita_secret_sem_credenciais():
             AwsSecretManagerConfig("arn:fake", "sa-east-1").set_env_from_secret()
 
 
-def test_secret_manager_encapsula_erro_aws():
+def test_secret_manager_encapsula_erro_aws_com_detalhe():
     with patch.dict(os.environ, {}, clear=True), patch(
         "src.config.credentials.boto3.client", side_effect=RuntimeError("boom")
-    ):
+    ), patch("src.config.credentials.logger.error") as error:
         with pytest.raises(StsException, match="Erro ao carregar credenciais"):
             AwsSecretManagerConfig("arn:fake", "sa-east-1").set_env_from_secret()
+
+    message = error.call_args.args[0]
+    assert "RuntimeError" in message
+    assert "boom" in message
+    assert "%s" not in message
+    assert error.call_args.kwargs["exc_info"] is True

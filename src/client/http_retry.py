@@ -1,4 +1,4 @@
-"""Política pequena e explícita de retry para chamadas HTTP transitórias."""
+"""Política explícita de retry para chamadas HTTP com falhas transitórias."""
 
 import logging
 import random
@@ -11,7 +11,7 @@ try:
     from src.utils.logger_util import prepare_logger
 
     logger = prepare_logger()  # pragma: no cover
-except (ImportError, ModuleNotFoundError):  # fallback apenas para execução isolada deste patch
+except (ImportError, ModuleNotFoundError):
     logger = logging.getLogger(__name__)  # pragma: no cover
 
 
@@ -33,44 +33,47 @@ def request_with_retries(
     max_attempts: int = MAX_ATTEMPTS,
     **request_kwargs,
 ) -> requests.Response:
-    """Executa uma chamada HTTP com retry apenas para falhas transitórias."""
+    """Executa chamada HTTP com retry apenas para falhas transitórias."""
     for attempt in range(1, max_attempts + 1):
         try:
             response = request_fn(**request_kwargs)
         except RETRYABLE_EXCEPTIONS as exc:
+            exception_name = type(exc).__name__
+            exception_message = str(exc)
+
             if attempt >= max_attempts:
                 logger.error(
-                    "%s falhou após %s tentativas: %s",
-                    operation,
-                    max_attempts,
-                    type(exc).__name__,
+                    f"{operation} falhou após {max_attempts} tentativas. "
+                    f"exception={exception_name}; detail={exception_message}",
+                    exc_info=True,
                 )
                 raise
 
             wait_seconds = _backoff(attempt)
             logger.warning(
-                "%s falhou com %s; nova tentativa %s/%s em %.2fs",
-                operation,
-                type(exc).__name__,
-                attempt + 1,
-                max_attempts,
-                wait_seconds,
+                f"{operation} falhou na tentativa {attempt}/{max_attempts}. "
+                f"exception={exception_name}; detail={exception_message}; "
+                f"retry={attempt + 1}/{max_attempts}; wait={wait_seconds:.2f}s"
             )
             time.sleep(wait_seconds)
             continue
 
-        if response.status_code not in RETRYABLE_STATUS_CODES or attempt >= max_attempts:
+        if response.status_code not in RETRYABLE_STATUS_CODES:
+            return response
+
+        if attempt >= max_attempts:
+            logger.error(
+                f"{operation} permaneceu com erro após {max_attempts} tentativas. "
+                f"http_status={response.status_code}"
+            )
             return response
 
         wait_seconds = _backoff(attempt)
         logger.warning(
-            "%s retornou HTTP %s; nova tentativa %s/%s em %.2fs",
-            operation,
-            response.status_code,
-            attempt + 1,
-            max_attempts,
-            wait_seconds,
+            f"{operation} retornou erro transitório. "
+            f"http_status={response.status_code}; attempt={attempt}/{max_attempts}; "
+            f"retry={attempt + 1}/{max_attempts}; wait={wait_seconds:.2f}s"
         )
         time.sleep(wait_seconds)
 
-    raise RuntimeError(f"Fluxo de retry inválido para {operation}")
+    raise RuntimeError(f"Fluxo de retry inválido para operation={operation}")

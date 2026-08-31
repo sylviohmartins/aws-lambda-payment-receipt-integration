@@ -18,7 +18,7 @@ try:
     from src.utils.logger_util import prepare_logger
 
     logger = prepare_logger()  # pragma: no cover
-except (ImportError, ModuleNotFoundError):  # fallback apenas para execução isolada deste patch
+except (ImportError, ModuleNotFoundError):
     logger = logging.getLogger(__name__)  # pragma: no cover
 
 
@@ -34,7 +34,11 @@ class AwsSecretManagerConfig:
 
     def __init__(self, secret_arn: str, region: str | None = None):
         self.secret_arn = secret_arn
-        self.region = region or os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
+        self.region = (
+            region
+            or os.environ.get("AWS_REGION")
+            or os.environ.get("AWS_DEFAULT_REGION")
+        )
 
     def set_env_from_secret(self) -> None:
         """Mantém o comportamento permanente: sem ARN, não executa I/O."""
@@ -61,7 +65,11 @@ class AwsSecretManagerConfig:
         except StsException:
             raise
         except Exception as exc:
-            logger.error("Falha ao carregar credenciais do Secrets Manager: %s", type(exc).__name__)
+            logger.error(
+                f"Falha ao carregar credenciais do Secrets Manager. "
+                f"exception={type(exc).__name__}; detail={exc}",
+                exc_info=True,
+            )
             raise StsException("Erro ao carregar credenciais do Secrets Manager") from exc
 
 
@@ -87,16 +95,7 @@ _TEMP_LOCAL_KEY = "<TEMP_FERNET_KEY_LOCAL_ONLY>"
 
 
 def set_env_from_temporary_encrypted_credentials() -> None:  # pragma: no cover
-    """Descriptografa o fallback temporário de PROD durante o cold start.
-
-    Não há seleção de ambiente. A função só é chamada quando o caminho
-    permanente não carregou ``CLIENT_ID``/``CLIENT_SECRET``. Após a primeira
-    execução, os valores permanecem no processo e são reutilizados nas warm
-    invocations.
-
-    Este método é deliberadamente excluído da cobertura por ser código
-    transitório que será removido assim que o Secrets Manager for provisionado.
-    """
+    """Descriptografa o fallback temporário de PROD durante o cold start."""
     if os.environ.get("CLIENT_ID") and os.environ.get("CLIENT_SECRET"):
         return
 
@@ -124,10 +123,18 @@ def set_env_from_temporary_encrypted_credentials() -> None:  # pragma: no cover
 
     try:
         fernet = Fernet(key.encode("utf-8"))
-        client_id = fernet.decrypt(_TEMP_ENCRYPTED_CLIENT_ID.encode("utf-8")).decode("utf-8")
-        client_secret = fernet.decrypt(_TEMP_ENCRYPTED_CLIENT_SECRET.encode("utf-8")).decode("utf-8")
+        client_id = fernet.decrypt(
+            _TEMP_ENCRYPTED_CLIENT_ID.encode("utf-8")
+        ).decode("utf-8")
+        client_secret = fernet.decrypt(
+            _TEMP_ENCRYPTED_CLIENT_SECRET.encode("utf-8")
+        ).decode("utf-8")
     except (ValueError, InvalidToken, UnicodeDecodeError) as exc:
-        logger.error("Falha ao descriptografar credenciais temporárias: %s", type(exc).__name__)
+        logger.error(
+            f"Falha ao descriptografar credenciais temporárias. "
+            f"exception={type(exc).__name__}; detail={exc}",
+            exc_info=True,
+        )
         raise StsException("Credenciais temporárias inválidas") from exc
 
     if not client_id or not client_secret:
@@ -136,6 +143,8 @@ def set_env_from_temporary_encrypted_credentials() -> None:  # pragma: no cover
     os.environ["CLIENT_ID"] = client_id
     os.environ["CLIENT_SECRET"] = client_secret
     logger.warning("Credenciais STS carregadas pelo fallback TEMPORÁRIO de produção")
+
+
 # ---------------------------------------------------------------------------
 # FIM DO BLOCO TEMPORÁRIO.
 # ---------------------------------------------------------------------------
